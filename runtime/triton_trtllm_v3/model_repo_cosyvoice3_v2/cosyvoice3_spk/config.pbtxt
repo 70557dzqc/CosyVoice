@@ -55,6 +55,11 @@ input [
     name: "target_text"
     data_type: TYPE_STRING
     dims: [1]
+  },
+  {
+    name: "spk_name"
+    data_type: TYPE_STRING
+    dims: [1]
   }
 ]
 output [

@@ -289,8 +289,8 @@ class TritonPythonModel:
 
         inference_response = inference_request.exec()
         if inference_response.has_error():
-            # raise pb_utils.TritonModelException(inference_response.error().message())
-            raise pb_utils.TritonModelException("Error during token2wav inference")
+            raise pb_utils.TritonModelException(inference_response.error().message())
+            # raise pb_utils.TritonModelException("Error during token2wav inference")
 
         # Extract and convert output waveform
         waveform = pb_utils.get_output_tensor_by_name(inference_response, 'waveform')
@@ -345,15 +345,15 @@ class TritonPythonModel:
         """
         responses = []
         logger.info(f"start execute requests")
-        logger.info(f"start execute requests")
         for request in requests:
             request_id = request.request_id()
             # Extract input tensors
             wav = pb_utils.get_input_tensor_by_name(request, "reference_wav")
-            wav = pb_utils.get_input_tensor_by_name(request, "reference_wav")
+            spk_name = pb_utils.get_input_tensor_by_name(request, "spk_name").as_numpy()
+            spk_name = spk_name[0][0].decode('utf-8')
 
             # Process reference audio through audio tokenizer
-            if wav is not None:
+            if wav is not None and spk_name not in self.spk_info:
                 wav_len = pb_utils.get_input_tensor_by_name(request, "reference_wav_len")
                 prompt_speech_tokens = self.forward_audio_tokenizer(wav, wav_len)
                 prompt_speech_tokens = prompt_speech_tokens.unsqueeze(0)
@@ -389,11 +389,22 @@ class TritonPythonModel:
                 # logger.info(f"prompt_spk_embedding: {prompt_spk_embedding}")
                 # logger.info(f"prompt_spk_embedding shape: {prompt_spk_embedding.shape}")
             else:
+                assert spk_name in self.spk_info, f"Speaker {spk_name} not found in spk_info"
+                self.logger.log_info(f"Using speaker: {spk_name}")
                 # using pre-cached reference text
-                reference_text = self.default_spk_info["prompt_text"]
-                prompt_speech_tokens = self.default_spk_info["speech_token"] + ORIGINAL_VOCAB_SIZE
-                prompt_speech_feat = None
-                prompt_spk_embedding = None
+                reference_text = self.spk_info[spk_name]['prompt_text']
+                prompt_speech_tokens = self.spk_info[spk_name]['prompt_token'].contiguous().to(device=self.device)
+                prompt_speech_tokens_new = []
+                for t in prompt_speech_tokens.cpu().numpy().tolist():
+                    prompt_speech_str = ''.join([f'<|s_{tt}|>' for tt in t])
+                    prompt_speech_tokens_new.append([prompt_speech_str])
+                prompt_speech_feat = self.spk_info[spk_name]['prompt_feat'].contiguous().to(device=self.device)
+                prompt_spk_embedding =  self.spk_info[spk_name]['embedding'].to(device=self.device)
+
+            # logger.info(f"reference_text: {reference_text}")
+            # logger.info(f"prompt_speech_tokens: {prompt_speech_tokens}")
+            # logger.info(f"prompt_speech_feat: {prompt_speech_feat}")
+            # logger.info(f"prompt_spk_embedding: {prompt_spk_embedding}")
 
             target_text = pb_utils.get_input_tensor_by_name(request, "target_text").as_numpy()
             # logger.info(f"target_text: {target_text}")
